@@ -78,6 +78,12 @@ class TongyiEmbeddingModelConnection(BaseEmbeddingModelConnection):
         self, text: str | Sequence[str], **kwargs: Any
     ) -> list[float] | list[list[float]]:
         """Generate embedding vector for text input."""
+        return self.embed_with_usage(text, **kwargs)[0]
+
+    def embed_with_usage(
+        self, text: str | Sequence[str], **kwargs: Any
+    ) -> tuple[list[float] | list[list[float]], Dict[str, Any] | None]:
+        """Generate embeddings and surface DashScope-reported token usage."""
         model = kwargs.pop("model", DEFAULT_MODEL)
         text_type = kwargs.pop("text_type", None)
         dimension = kwargs.pop("dimension", None)
@@ -104,7 +110,21 @@ class TongyiEmbeddingModelConnection(BaseEmbeddingModelConnection):
             raise RuntimeError(msg)
 
         embeddings = [e["embedding"] for e in response.output["embeddings"]]
-        return embeddings[0] if isinstance(text, str) else embeddings
+
+        usage = None
+        response_usage = getattr(response, "usage", None)
+        if response_usage:
+            # DashScope reports input-side usage as total_tokens (embeddings
+            # have no completion side); some models also report input_tokens.
+            total_tokens = response_usage.get("total_tokens")
+            prompt_tokens = response_usage.get("input_tokens") or total_tokens
+            usage = {
+                "model_name": model,
+                "promptTokens": prompt_tokens,
+                "totalTokens": total_tokens,
+            }
+
+        return (embeddings[0] if isinstance(text, str) else embeddings), usage
 
 
 class TongyiEmbeddingModelSetup(BaseEmbeddingModelSetup):

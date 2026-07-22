@@ -115,6 +115,13 @@ class OpenAIEmbeddingModelConnection(BaseEmbeddingModelConnection):
         self, text: str | Sequence[str], **kwargs: Any
     ) -> list[float] | list[list[float]]:
         """Generate embedding vector for a single text query."""
+        return self.embed_with_usage(text, **kwargs)[0]
+
+    @override
+    def embed_with_usage(
+        self, text: str | Sequence[str], **kwargs: Any
+    ) -> tuple[list[float] | list[list[float]], Dict[str, Any] | None]:
+        """Generate embeddings and surface OpenAI-reported token usage."""
         # Extract OpenAI specific parameters
         model = kwargs.pop("model")
         encoding_format = kwargs.pop("encoding_format", None)
@@ -133,7 +140,17 @@ class OpenAIEmbeddingModelConnection(BaseEmbeddingModelConnection):
         )
 
         embeddings = [list(embedding.embedding) for embedding in response.data]
-        return embeddings[0] if isinstance(text, str) else embeddings
+
+        usage = None
+        response_usage = getattr(response, "usage", None)
+        if response_usage is not None:
+            usage = {
+                "model_name": getattr(response, "model", None) or model,
+                "promptTokens": getattr(response_usage, "prompt_tokens", None),
+                "totalTokens": getattr(response_usage, "total_tokens", None),
+            }
+
+        return (embeddings[0] if isinstance(text, str) else embeddings), usage
 
     @override
     def close(self) -> None:

@@ -16,12 +16,15 @@
 # limitations under the License.
 #################################################################################
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Sequence, cast
+from typing import TYPE_CHECKING, Any, Dict, Sequence, Tuple, cast
 
 from pydantic import Field
 from typing_extensions import override
 
 from flink_agents.api.resource import Resource, ResourceType
+
+if TYPE_CHECKING:
+    from flink_agents.api.metric_group import MetricGroup
 
 
 class BaseEmbeddingModelConnection(Resource, ABC):
@@ -61,6 +64,30 @@ class BaseEmbeddingModelConnection(Resource, ABC):
             A list of floating-point numbers representing the embedding vector.
             The dimension of the vector depends on the specific embedding model used.
         """
+
+    def embed_with_usage(
+        self, text: str | Sequence[str], **kwargs: Any
+    ) -> Tuple[list[float] | list[list[float]], Dict[str, Any] | None]:
+        """Generate embeddings and report provider token usage alongside them.
+
+        Mirrors how chat connections surface usage on the response
+        (``ChatMessage.extra_args``): usage travels on the call path instead
+        of being dropped before it reaches the metrics layer (#858).
+
+        Connections that receive usage from their provider should override
+        this method; the default keeps existing third-party connections
+        working with no usage reported.
+
+        Args:
+            text: The text input(s) to convert into embedding vector(s).
+            **kwargs: Additional parameters passed to the embedding model.
+
+        Returns:
+            A tuple of (embeddings, usage). ``usage`` is ``None`` when the
+            provider reports nothing, otherwise a dict with optional keys
+            ``model_name``, ``promptTokens`` and ``totalTokens``.
+        """
+        return self.embed(text, **kwargs), None
 
 
 class BaseEmbeddingModelSetup(Resource, ABC):
@@ -112,6 +139,10 @@ class BaseEmbeddingModelSetup(Resource, ABC):
         Converts the input text into a high-dimensional vector representation
         suitable for semantic similarity search and retrieval operations.
 
+        Token usage reported by the connection is recorded on this setup's
+        bound metric group under the same ``model`` dimension used by chat
+        models, with ``promptTokens`` and ``totalTokens`` counters (#858).
+
         Args:
             text: The text string to convert into an embedding vector.
             **kwargs: Additional parameters passed to the embedding model.
@@ -122,4 +153,48 @@ class BaseEmbeddingModelSetup(Resource, ABC):
         """
         merged_kwargs = self.model_kwargs.copy()
         merged_kwargs.update(kwargs)
-        return self._get_connection().embed(text, **merged_kwargs)
+        embeddings, usage = self._get_connection().embed_with_usage(
+            text, **merged_kwargs
+        )
+        if usage:
+            self._record_token_metrics(
+                usage.get("model_name") or self.model,
+                usage.get("promptTokens"),
+                usage.get("totalTokens"),
+            )
+        return embeddings
+
+    def _record_token_metrics(
+        self,
+        model_name: str,
+        prompt_tokens: int | None,
+        total_tokens: int | None,
+        metric_group: "MetricGroup | None" = None,
+    ) -> None:
+        """Record embedding token usage metrics for the given model.
+
+        Embedding APIs report input-side usage only, so unlike chat models
+        there is no ``completionTokens`` counter.
+
+        Parameters
+        ----------
+        model_name : str
+            The name of the model used
+        prompt_tokens : int | None
+            The number of prompt (input) tokens, if reported
+        total_tokens : int | None
+            The total number of tokens, if reported
+        metric_group : MetricGroup | None
+            The metric group to record into; falls back to the currently
+            bound group when not provided.
+        """
+        if metric_group is None:
+            metric_group = self.metric_group
+        if metric_group is None:
+            return
+
+        model_group = metric_group.get_sub_group("model", model_name)
+        if prompt_tokens:
+            model_group.get_counter("promptTokens").inc(prompt_tokens)
+        if total_tokens:
+            model_group.get_counter("totalTokens").inc(total_tokens)

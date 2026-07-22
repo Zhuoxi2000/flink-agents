@@ -81,6 +81,12 @@ class OllamaEmbeddingModelConnection(BaseEmbeddingModelConnection):
         self, text: str | Sequence[str], **kwargs: Any
     ) -> list[float] | list[list[float]]:
         """Generate embedding vector for a single text query."""
+        return self.embed_with_usage(text, **kwargs)[0]
+
+    def embed_with_usage(
+        self, text: str | Sequence[str], **kwargs: Any
+    ) -> tuple[list[float] | list[list[float]], Dict[str, Any] | None]:
+        """Generate embeddings and surface Ollama-reported token usage."""
         # Extract specific parameters
         model = kwargs.pop("model")
         keep_alive = kwargs.pop("keep_alive", None)
@@ -96,7 +102,18 @@ class OllamaEmbeddingModelConnection(BaseEmbeddingModelConnection):
         )
 
         embeddings = [list(embedding) for embedding in response.embeddings]
-        return embeddings[0] if isinstance(text, str) else embeddings
+
+        usage = None
+        # Ollama reports input-side usage as prompt_eval_count (newer servers).
+        prompt_eval_count = getattr(response, "prompt_eval_count", None)
+        if prompt_eval_count:
+            usage = {
+                "model_name": getattr(response, "model", None) or model,
+                "promptTokens": prompt_eval_count,
+                "totalTokens": prompt_eval_count,
+            }
+
+        return (embeddings[0] if isinstance(text, str) else embeddings), usage
 
 
 class OllamaEmbeddingModelSetup(BaseEmbeddingModelSetup):
