@@ -182,7 +182,10 @@ public class ChatModelAction {
         }
     }
 
-    static void recordChatTokenMetrics(BaseChatModelSetup chatModel, ChatMessage response) {
+    static void recordChatTokenMetrics(
+            BaseChatModelSetup chatModel,
+            ChatMessage response,
+            @Nullable FlinkAgentsMetricGroup actionMetricGroup) {
         Map<String, Object> extraArgs = response.getExtraArgs();
         Object modelName = extraArgs.get("model_name");
         Object promptTokens = extraArgs.get("promptTokens");
@@ -194,7 +197,8 @@ public class ChatModelAction {
             long prompt = ((Number) promptTokens).longValue();
             long completion = ((Number) completionTokens).longValue();
             if (prompt > 0 && completion > 0) {
-                chatModel.recordTokenMetrics(modelName.toString(), prompt, completion);
+                chatModel.recordTokenMetrics(
+                        modelName.toString(), prompt, completion, actionMetricGroup);
             }
         }
     }
@@ -322,6 +326,11 @@ public class ChatModelAction {
             throws Exception {
         BaseChatModelSetup chatModel =
                 (BaseChatModelSetup) ctx.getResource(model, ResourceType.CHAT_MODEL);
+        // Capture this action's metric group before any async boundary: the chat model is a
+        // cached resource shared across actions, and another action acquiring it while this one
+        // is suspended would rebind its metric group, attributing delayed token metrics to the
+        // wrong action (#859).
+        FlinkAgentsMetricGroup actionMetricGroup = ctx.getActionMetricGroup();
 
         boolean chatAsync = ctx.getConfig().get(AgentExecutionOptions.CHAT_ASYNC);
 
@@ -372,7 +381,7 @@ public class ChatModelAction {
                         chatAsync
                                 ? ctx.durableExecuteAsync(callable)
                                 : ctx.durableExecute(callable);
-                recordChatTokenMetrics(chatModel, response);
+                recordChatTokenMetrics(chatModel, response, actionMetricGroup);
                 // only generate structured output for final response.
                 if (outputSchema != null && response.getToolCalls().isEmpty()) {
                     response = generateStructuredOutput(response, outputSchema);

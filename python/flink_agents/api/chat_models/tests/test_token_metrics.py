@@ -169,6 +169,29 @@ class TestBaseChatModelTokenMetrics:
         chat_model = TestChatModelSetup(connection="mock", model="mock-model")
         assert chat_model.resource_type() == ResourceType.CHAT_MODEL
 
+    def test_explicit_metric_group_unaffected_by_rebinding(self) -> None:
+        """Metrics recorded after another action re-acquired the cached setup
+        must still go to the action that captured the group (#859).
+        """
+        chat_model = TestChatModelSetup(connection="mock", model="mock-model")
+        action_a_group = _MockMetricGroup()
+        action_b_group = _MockMetricGroup()
+
+        # Action A acquires the cached setup and captures its group.
+        chat_model.set_metric_group(action_a_group)
+        captured = chat_model.metric_group
+
+        # Action B acquires the same cached setup before A records.
+        chat_model.set_metric_group(action_b_group)
+
+        # A's delayed recording passes the group captured at acquisition.
+        chat_model._record_token_metrics("gpt-4", 100, 50, metric_group=captured)
+
+        a_model_group = action_a_group.get_sub_group("model", "gpt-4")
+        assert a_model_group.get_counter("promptTokens").get_count() == 100
+        assert a_model_group.get_counter("completionTokens").get_count() == 50
+        assert action_b_group._sub_groups == {}
+
     def test_bound_metric_group_property(self) -> None:
         """Test bound_metric_group property."""
         chat_model = TestChatModelSetup(connection="mock", model="mock-model")

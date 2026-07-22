@@ -116,7 +116,26 @@ public abstract class BaseChatModelSetup extends Resource {
      * @param completionTokens the number of completion tokens
      */
     public void recordTokenMetrics(String modelName, long promptTokens, long completionTokens) {
-        FlinkAgentsMetricGroup metricGroup = getMetricGroup();
+        recordTokenMetrics(modelName, promptTokens, completionTokens, getMetricGroup());
+    }
+
+    /**
+     * Record token usage metrics for the given model on an explicitly provided metric group.
+     *
+     * <p>Callers that record after an async boundary must pass the metric group captured when the
+     * resource was acquired: this setup is cached and shared across actions, so the group bound via
+     * {@link #setMetricGroup} may have been rebound to another action in the meantime.
+     *
+     * @param modelName the name of the model used
+     * @param promptTokens the number of prompt tokens
+     * @param completionTokens the number of completion tokens
+     * @param metricGroup the metric group to record into; no-op when {@code null}
+     */
+    public void recordTokenMetrics(
+            String modelName,
+            long promptTokens,
+            long completionTokens,
+            @Nullable FlinkAgentsMetricGroup metricGroup) {
         if (metricGroup == null) {
             return;
         }

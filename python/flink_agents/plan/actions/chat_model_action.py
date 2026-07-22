@@ -290,6 +290,11 @@ async def chat(
     chat_model = cast(
         "BaseChatModelSetup", ctx.get_resource(model, ResourceType.CHAT_MODEL)
     )
+    # Capture this action's metric group before any await: the chat model is a
+    # cached resource shared across actions, and another action acquiring it
+    # while this one is suspended would rebind chat_model.metric_group,
+    # attributing delayed token metrics to the wrong action (#859).
+    action_metric_group = chat_model.metric_group
 
     chat_async = ctx.config.get(AgentExecutionOptions.CHAT_ASYNC)
 
@@ -334,6 +339,7 @@ async def chat(
                     response.extra_args["model_name"],
                     response.extra_args["promptTokens"],
                     response.extra_args["completionTokens"],
+                    metric_group=action_metric_group,
                 )
             if output_schema is not None and len(response.tool_calls) == 0:
                 response = _generate_structured_output(response, output_schema)

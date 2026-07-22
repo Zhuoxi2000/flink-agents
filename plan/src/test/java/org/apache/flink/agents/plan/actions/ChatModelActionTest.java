@@ -20,12 +20,14 @@ package org.apache.flink.agents.plan.actions;
 import org.apache.flink.agents.api.chat.messages.ChatMessage;
 import org.apache.flink.agents.api.chat.messages.MessageRole;
 import org.apache.flink.agents.api.chat.model.BaseChatModelSetup;
+import org.apache.flink.agents.api.metrics.FlinkAgentsMetricGroup;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
@@ -47,9 +49,10 @@ class ChatModelActionTest {
         extraArgs.put("promptTokens", 100L);
         extraArgs.put("completionTokens", 50L);
 
-        ChatModelAction.recordChatTokenMetrics(setup, responseWith(extraArgs));
+        FlinkAgentsMetricGroup actionGroup = mock(FlinkAgentsMetricGroup.class);
+        ChatModelAction.recordChatTokenMetrics(setup, responseWith(extraArgs), actionGroup);
 
-        verify(setup).recordTokenMetrics("m", 100L, 50L);
+        verify(setup).recordTokenMetrics("m", 100L, 50L, actionGroup);
     }
 
     @Test
@@ -60,9 +63,10 @@ class ChatModelActionTest {
         extraArgs.put("promptTokens", 100);
         extraArgs.put("completionTokens", 50);
 
-        ChatModelAction.recordChatTokenMetrics(setup, responseWith(extraArgs));
+        FlinkAgentsMetricGroup actionGroup = mock(FlinkAgentsMetricGroup.class);
+        ChatModelAction.recordChatTokenMetrics(setup, responseWith(extraArgs), actionGroup);
 
-        verify(setup).recordTokenMetrics("m", 100L, 50L);
+        verify(setup).recordTokenMetrics("m", 100L, 50L, actionGroup);
     }
 
     @Test
@@ -73,9 +77,11 @@ class ChatModelActionTest {
         extraArgs.put("promptTokens", "100");
         extraArgs.put("completionTokens", 50L);
 
-        ChatModelAction.recordChatTokenMetrics(setup, responseWith(extraArgs));
+        ChatModelAction.recordChatTokenMetrics(
+                setup, responseWith(extraArgs), mock(FlinkAgentsMetricGroup.class));
 
-        verify(setup, never()).recordTokenMetrics(anyString(), anyLong(), anyLong());
+        verify(setup, never())
+                .recordTokenMetrics(anyString(), anyLong(), anyLong(), any());
     }
 
     @Test
@@ -85,9 +91,11 @@ class ChatModelActionTest {
         extraArgs.put("model_name", "m");
         extraArgs.put("completionTokens", 50L);
 
-        ChatModelAction.recordChatTokenMetrics(setup, responseWith(extraArgs));
+        ChatModelAction.recordChatTokenMetrics(
+                setup, responseWith(extraArgs), mock(FlinkAgentsMetricGroup.class));
 
-        verify(setup, never()).recordTokenMetrics(anyString(), anyLong(), anyLong());
+        verify(setup, never())
+                .recordTokenMetrics(anyString(), anyLong(), anyLong(), any());
     }
 
     @Test
@@ -98,15 +106,17 @@ class ChatModelActionTest {
         zeroPrompt.put("model_name", "m");
         zeroPrompt.put("promptTokens", 0L);
         zeroPrompt.put("completionTokens", 50L);
-        ChatModelAction.recordChatTokenMetrics(setup, responseWith(zeroPrompt));
+        FlinkAgentsMetricGroup actionGroup = mock(FlinkAgentsMetricGroup.class);
+        ChatModelAction.recordChatTokenMetrics(setup, responseWith(zeroPrompt), actionGroup);
 
         Map<String, Object> emptyModel = new HashMap<>();
         emptyModel.put("model_name", "");
         emptyModel.put("promptTokens", 100L);
         emptyModel.put("completionTokens", 50L);
-        ChatModelAction.recordChatTokenMetrics(setup, responseWith(emptyModel));
+        ChatModelAction.recordChatTokenMetrics(setup, responseWith(emptyModel), actionGroup);
 
-        verify(setup, never()).recordTokenMetrics(anyString(), anyLong(), anyLong());
+        verify(setup, never())
+                .recordTokenMetrics(anyString(), anyLong(), anyLong(), any());
     }
 
     @Test

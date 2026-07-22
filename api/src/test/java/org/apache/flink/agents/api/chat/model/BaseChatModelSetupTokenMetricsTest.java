@@ -215,6 +215,39 @@ class BaseChatModelSetupTokenMetricsTest {
     }
 
     @Test
+    @DisplayName(
+            "Explicit metric group wins over a rebound one: metrics recorded after another "
+                    + "action re-acquired the cached setup still go to the capturing action")
+    void testExplicitMetricGroupUnaffectedByRebinding() {
+        TestMetricGroup actionAGroup = new TestMetricGroup();
+        TestMetricGroup actionBGroup = new TestMetricGroup();
+
+        // Action A acquires the cached setup and captures its group.
+        setup.setMetricGroup(actionAGroup);
+
+        // Action B acquires the same cached setup before A records (#859).
+        setup.setMetricGroup(actionBGroup);
+
+        // A's delayed recording passes the group it captured at acquisition.
+        setup.recordTokenMetrics("gpt-4", 100, 50, actionAGroup);
+
+        TestMetricGroup aModelGroup = (TestMetricGroup) actionAGroup.getSubGroup("model", "gpt-4");
+        assertEquals(100, aModelGroup.counters.get("promptTokens").getCount());
+        assertEquals(50, aModelGroup.counters.get("completionTokens").getCount());
+        assertEquals(0, actionBGroup.subGroups.size());
+    }
+
+    @Test
+    @DisplayName("Explicit null metric group is a no-op")
+    void testExplicitNullMetricGroupIsNoOp() {
+        setup.setMetricGroup(mockMetricGroup);
+
+        assertDoesNotThrow(() -> setup.recordTokenMetrics("gpt-4", 100, 50, null));
+
+        verifyNoInteractions(mockMetricGroup);
+    }
+
+    @Test
     @DisplayName("Value-based: counters accumulate across multiple calls")
     void testCountersAccumulate() {
         TestMetricGroup root = new TestMetricGroup();

@@ -17,7 +17,17 @@
 #################################################################################
 import re
 from abc import ABC, abstractmethod
-from typing import Any, ClassVar, Dict, List, Mapping, Sequence, Tuple, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Dict,
+    List,
+    Mapping,
+    Sequence,
+    Tuple,
+    cast,
+)
 
 from pydantic import Field, PrivateAttr
 from typing_extensions import override
@@ -31,6 +41,9 @@ from flink_agents.api.prompts.prompt import Prompt
 from flink_agents.api.resource import Resource, ResourceType
 from flink_agents.api.skills import BASH_TOOL, LOAD_SKILL_TOOL
 from flink_agents.api.tools.tool import Tool
+
+if TYPE_CHECKING:
+    from flink_agents.api.metric_group import MetricGroup
 
 
 class BaseChatModelConnection(Resource, ABC):
@@ -261,7 +274,11 @@ class BaseChatModelSetup(Resource):
         )
 
     def _record_token_metrics(
-        self, model_name: str, prompt_tokens: int, completion_tokens: int
+        self,
+        model_name: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        metric_group: "MetricGroup | None" = None,
     ) -> None:
         """Record token usage metrics for the given model.
 
@@ -273,8 +290,16 @@ class BaseChatModelSetup(Resource):
             The number of prompt tokens
         completion_tokens : int
             The number of completion tokens
+        metric_group : MetricGroup | None
+            The metric group to record into. Callers that record after an
+            await/async boundary must pass the group captured when the
+            resource was acquired: this setup is cached and shared across
+            actions, so the bound ``self.metric_group`` may have been
+            rebound to another action in the meantime. Falls back to the
+            currently bound group when not provided.
         """
-        metric_group = self.metric_group
+        if metric_group is None:
+            metric_group = self.metric_group
         if metric_group is None:
             return
 
